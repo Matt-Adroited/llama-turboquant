@@ -177,10 +177,11 @@ llm_build_kimi_linear::llm_build_kimi_linear(const llama_model & model, const ll
             cb(new_state, "new_state", il);
 
             // Update the recurrent states
+            const size_t state_row_bytes = ggml_row_size(ssm_states_all->type, hparams.n_embd_s());
             ggml_build_forward_expand(gf,
                                      ggml_cpy(ctx0, new_state,
                                               ggml_view_1d(ctx0, ssm_states_all, hparams.n_embd_s() * n_seqs,
-                                                           kv_head * hparams.n_embd_s() * ggml_element_size(ssm_states_all))));
+                                                           kv_head * state_row_bytes)));
 
             // Output gating g2 = g_b(g_a(x))
             ggml_tensor * cur_2d = ggml_reshape_2d(ctx0, cur, cur->ne[0], n_seq_tokens * n_seqs);
