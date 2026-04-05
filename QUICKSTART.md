@@ -35,26 +35,80 @@ cmake -B build-cuda \
 cmake --build build-cuda -j$(nproc)
 ```
 
-## Standard Models (KV Cache Quantization)
+## TurboQuant KV Cache Quantization
 
-TurboQuant quantizes the KV cache at runtime, reducing memory usage during inference. Works with any GGUF model using standard attention.
+TurboQuant applies Walsh-Hadamard Transform (WHT) rotation followed by Lloyd-Max optimal quantization to the KV cache at runtime. This reduces KV cache memory by 4-8x with minimal quality loss, based on research from Google's KV cache quantization paper (ICLR 2026).
+
+### How it works
+
+1. **WHT Rotation** — decorrelates the KV cache values within each block of 128 elements, spreading information evenly
+2. **Lloyd-Max Codebook** — optimal non-uniform quantization to 2/3/4-bit, minimizing mean squared error
+3. **Per-block scale** — each 128-element block stores a single FP16 scale factor
+
+### TQ types
+
+| Type | Bits per weight | Best for |
+|------|----------------|----------|
+| `tq2_0` | 2.125 bpw | V cache (values are more compressible) |
+| `tq3_0` | 3.5 bpw | K cache (keys need more precision for dot products) |
+| `tq4_0` | 4.125 bpw | Either K or V when maximum quality is needed |
+
+### Recommended configurations
 
 ```bash
-# TQ3_0 K cache + TQ2_0 V cache (asymmetric, recommended)
+# Asymmetric K3/V2 — best memory/quality tradeoff (recommended)
 ./build-hip/bin/llama-cli \
   -m your-model.gguf \
   -p "Your prompt" \
   -n 128 -ngl 99 \
   -ctk tq3_0 -ctv tq2_0
 
-# Compare with default F16 KV cache
+# Symmetric TQ4 — near-lossless, good for smaller models
 ./build-hip/bin/llama-cli \
   -m your-model.gguf \
   -p "Your prompt" \
-  -n 128 -ngl 99
+  -n 128 -ngl 99 \
+  -ctk tq4_0 -ctv tq4_0
+
+# Symmetric TQ2 — maximum compression (works best at 12B+ model sizes)
+./build-hip/bin/llama-cli \
+  -m your-model.gguf \
+  -p "Your prompt" \
+  -n 128 -ngl 99 \
+  -ctk tq2_0 -ctv tq2_0
 ```
 
-TQ types available: `tq2_0` (2-bit), `tq3_0` (3-bit), `tq4_0` (4-bit)
+### KV cache benchmark results
+
+Tested on AMD Strix Halo (128.5 GB unified memory):
+
+**MoE models (best case for TQ — only 4-10% speed penalty):**
+
+GPT-OSS-120B (128 experts, 4 active, head_dim=64):
+
+| KV Config | Speed (t/s) | Notes |
+|-----------|-------------|-------|
+| f16/f16 (baseline) | 49.4 | Default |
+| tq2_0/tq2_0 | 44.5 | 4-8x KV memory reduction |
+| tq4_0/tq4_0 | 39.5 | Near-lossless |
+| tq3_0/tq2_0 | 38.9 | Asymmetric, best quality/compression |
+
+**Dense models (higher TQ overhead, 20-27% penalty):**
+
+Qwen3-4B (head_dim=128):
+
+| KV Config | Speed (t/s) | Quality |
+|-----------|-------------|---------|
+| f16/f16 (baseline) | 44.7 | Reference |
+| tq4_0/tq4_0 | 10.0 | Nearly identical to f16 |
+| tq3_0/tq3_0 | 10.3 | Coherent |
+
+### Key findings
+
+- **MoE models are the sweet spot** — TQ penalty is minimal because KV cache ops are a smaller fraction of total compute
+- **K needs more precision than V** — asymmetric K3/V2 works where symmetric K2/V2 doesn't (especially at smaller model sizes)
+- **Minimum model size for TQ2** — symmetric tq2_0/tq2_0 produces coherent output at 12B+, garbled at 4B
+- **head_dim must be 128** — models with head_dim=64 or non-standard dims (e.g., MLA's 576/512) are not compatible with TQ block size
 
 ## KDA Models (Kimi-Linear)
 
