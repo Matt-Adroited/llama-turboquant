@@ -1999,6 +1999,10 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             {
                 ggml_compute_forward_ssm_scan(params, tensor);
             } break;
+        case GGML_OP_KDA_SCAN:
+            {
+                ggml_compute_forward_kda_scan(params, tensor);
+            } break;
         case GGML_OP_WIN_PART:
             {
                 ggml_compute_forward_win_part(params, tensor);
@@ -2362,6 +2366,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_FLASH_ATTN_BACK:
         case GGML_OP_SSM_CONV:
         case GGML_OP_SSM_SCAN:
+        case GGML_OP_KDA_SCAN:
             {
                 n_tasks = n_threads;
             } break;

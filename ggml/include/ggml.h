@@ -552,6 +552,7 @@ extern "C" {
         GGML_OP_FLASH_ATTN_BACK,
         GGML_OP_SSM_CONV,
         GGML_OP_SSM_SCAN,
+        GGML_OP_KDA_SCAN,
         GGML_OP_WIN_PART,
         GGML_OP_WIN_UNPART,
         GGML_OP_GET_REL_POS,
@@ -2371,6 +2372,17 @@ extern "C" {
             struct ggml_tensor  * A,
             struct ggml_tensor  * B,
             struct ggml_tensor  * C,
+            struct ggml_tensor  * ids);
+
+    // KDA (Kimi Delta Attention) scan
+    GGML_API struct ggml_tensor * ggml_kda_scan(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * h,
+            struct ggml_tensor  * q,
+            struct ggml_tensor  * k,
+            struct ggml_tensor  * v,
+            struct ggml_tensor  * g,
+            struct ggml_tensor  * beta,
             struct ggml_tensor  * ids);
 
     // partition into non-overlapping windows with padding if needed
